@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"sort"
+	"sync"
 )
 
 type Location struct {
@@ -32,24 +34,53 @@ func (loc *Location) Add(temp float32) {
 	loc.count += 1
 }
 
+const chunkSize = 50 * 1024 * 1024
+
 func main() {
-	file, _ := os.Open("./measurements.txt")
+	file, _ := os.Open("./test/measurements.txt")
 	defer file.Close()
-	scanner := bufio.NewScanner(file)
 
 	m := map[string]*Location{}
-	for scanner.Scan() {
-		before, after, _ := bytes.Cut(scanner.Bytes(), []byte{';'})
-		name := string(before)
-		temp := parse(after)
 
-		loc, ok := m[name]
-		if !ok {
-			loc = NewLocation()
-			m[name] = loc
+	buf := make([]byte, chunkSize)
+	reader := bufio.NewReader(file)
+	var leftData []byte
+
+	var wg sync.WaitGroup
+
+	for {
+		n, err := reader.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			panic(err)
 		}
-		loc.Add(temp)
+
+		chunk := append(leftData, buf[:n]...)
+		lines := bytes.Split(chunk, []byte{'\n'})
+		lines, leftData = lines[:len(lines)-1], lines[len(lines)-1]
+		wg.Add(1)
+
+		go func() {
+			for _, line := range lines {
+				before, after, _ := bytes.Cut(line, []byte{';'})
+				name := string(before)
+				temp := parse(after)
+
+				loc, ok := m[name]
+				if !ok {
+					loc = NewLocation()
+					m[name] = loc
+				}
+				loc.Add(temp)
+			}
+
+			wg.Done()
+		}()
 	}
+
+	wg.Wait()
 
 	keys := make([]string, 0, len(m))
 	for k := range m {
