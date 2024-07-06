@@ -16,8 +16,24 @@ type Location struct {
 	count int
 }
 
+func NewLocation() *Location {
+	return &Location{
+		min:   999999,
+		max:   -999999,
+		mean:  0,
+		count: 0,
+	}
+}
+
+func (loc *Location) Add(temp float32) {
+	loc.min = float32(math.Min(float64(loc.min), float64(temp)))
+	loc.max = float32(math.Max(float64(loc.max), float64(temp)))
+	loc.mean = (loc.mean*float32(loc.count) + float32(temp)) / (float32(loc.count) + 1)
+	loc.count += 1
+}
+
 func main() {
-	file, _ := os.Open("./test/measurements.txt")
+	file, _ := os.Open("./measurements.txt")
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 
@@ -29,20 +45,10 @@ func main() {
 
 		loc, ok := m[name]
 		if !ok {
-			loc = &Location{
-				min:   999999,
-				max:   -999999,
-				mean:  0,
-				count: 0,
-			}
+			loc = NewLocation()
+			m[name] = loc
 		}
-
-		loc.min = float32(math.Min(float64(loc.min), float64(temp)))
-		loc.max = float32(math.Max(float64(loc.max), float64(temp)))
-		loc.mean = (loc.mean*float32(loc.count) + float32(temp)) / (float32(loc.count) + 1)
-		loc.count += 1
-
-		m[name] = loc
+		loc.Add(temp)
 	}
 
 	keys := make([]string, 0, len(m))
