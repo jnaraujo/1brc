@@ -35,9 +35,10 @@ func (loc *Location) Add(temp float32) {
 }
 
 const chunkSize = 50 * 1024 * 1024
+const workers = 8
 
 func main() {
-	file, _ := os.Open("./test/measurements.txt")
+	file, _ := os.Open("./measurements.txt")
 	defer file.Close()
 
 	m := map[string]*Location{}
@@ -47,35 +48,43 @@ func main() {
 	var leftData []byte
 
 	var wg sync.WaitGroup
+	linesChan := make(chan [][]byte)
+	wg.Add(workers)
 
-	for {
-		n, err := reader.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			panic(err)
-		}
-
-		chunk := append(leftData, buf[:n]...)
-		lines := bytes.Split(chunk, []byte{'\n'})
-		lines, leftData = lines[:len(lines)-1], lines[len(lines)-1]
-		wg.Add(1)
-
-		go func() {
-			for _, line := range lines {
-				before, after, _ := bytes.Cut(line, []byte{';'})
-				name := string(before)
-				temp := parse(after)
-
-				loc, ok := m[name]
-				if !ok {
-					loc = NewLocation()
-					m[name] = loc
+	go func() {
+		for {
+			n, err := reader.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					break
 				}
-				loc.Add(temp)
+				panic(err)
 			}
 
+			chunk := append(leftData, buf[:n]...)
+			lines := bytes.Split(chunk, []byte{'\n'})
+			lines, leftData = lines[:len(lines)-1], lines[len(lines)-1]
+			linesChan <- lines
+		}
+		close(linesChan)
+	}()
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			for lines := range linesChan {
+				for _, line := range lines {
+					before, after, _ := bytes.Cut(line, []byte{';'})
+					name := string(before)
+					temp := parse(after)
+
+					loc, ok := m[name]
+					if !ok {
+						loc = NewLocation()
+						m[name] = loc
+					}
+					loc.Add(float32(temp))
+				}
+			}
 			wg.Done()
 		}()
 	}
@@ -96,36 +105,21 @@ func main() {
 }
 
 func parse(b []byte) float32 {
-	v := float32(0)
+	var v int32
+	var isNeg int32 = 1
 
-	isNeg := 1
-	for _, char := range b {
-		if char != '.' {
-			v *= 10
-		}
-
-		switch char {
-		case '-':
+	for i := 0; i < len(b)-1; i++ {
+		char := b[i]
+		if char == '-' {
 			isNeg = -1
-		case '1':
-			v += 1
-		case '2':
-			v += 2
-		case '3':
-			v += 3
-		case '4':
-			v += 4
-		case '5':
-			v += 5
-		case '6':
-			v += 6
-		case '7':
-			v += 7
-		case '8':
-			v += 8
-		case '9':
-			v += 9
+		} else if char == '.' {
+			digit := int32(b[i+1] - '0')
+			v = v*10 + digit
+		} else {
+			digit := int32(char - '0')
+			v = v*10 + digit
 		}
 	}
-	return v * float32(isNeg) / 10
+
+	return float32(v*isNeg) / 10
 }
