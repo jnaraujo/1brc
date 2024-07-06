@@ -98,9 +98,14 @@ func main() {
 		go func() {
 			for lines := range linesChan {
 				for _, line := range lines {
-					before, after, _ := bytes.Cut(line, []byte{';'})
-					name := string(before)
-					temp := parse(after)
+					idx := 0
+					if line[len(line)-5] == ';' {
+						idx = len(line) - 5
+					} else {
+						idx = len(line) - 6
+					}
+					name := string(line[:idx])
+					temp := parse(line[idx+1:])
 
 					loc, ok := m[name]
 					if !ok {
