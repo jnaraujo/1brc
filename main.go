@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"sort"
-	"strconv"
 )
 
 type Location struct {
@@ -18,7 +17,7 @@ type Location struct {
 }
 
 func main() {
-	file, _ := os.Open("./measurements.txt")
+	file, _ := os.Open("./test/measurements.txt")
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 
@@ -26,7 +25,7 @@ func main() {
 	for scanner.Scan() {
 		before, after, _ := bytes.Cut(scanner.Bytes(), []byte{';'})
 		name := string(before)
-		temp, _ := strconv.ParseFloat(string(after), 32)
+		temp := parse(after)
 
 		loc, ok := m[name]
 		if !ok {
@@ -57,4 +56,39 @@ func main() {
 		loc := m[name]
 		fmt.Printf("%s: %.1f/%.1f/%.1f\n", name, loc.min, loc.mean, loc.max)
 	}
+}
+
+func parse(b []byte) float32 {
+	v := float32(0)
+
+	isNeg := 1
+	for _, char := range b {
+		if char != '.' {
+			v *= 10
+		}
+
+		switch char {
+		case '-':
+			isNeg = -1
+		case '1':
+			v += 1
+		case '2':
+			v += 2
+		case '3':
+			v += 3
+		case '4':
+			v += 4
+		case '5':
+			v += 5
+		case '6':
+			v += 6
+		case '7':
+			v += 7
+		case '8':
+			v += 8
+		case '9':
+			v += 9
+		}
+	}
+	return v * float32(isNeg) / 10
 }
