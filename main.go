@@ -3,10 +3,13 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"os"
+	"runtime/pprof"
 	"sort"
 	"sync"
 )
@@ -37,7 +40,19 @@ func (loc *Location) Add(temp float32) {
 const chunkSize = 50 * 1024 * 1024
 const workers = 8
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+
 func main() {
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
 	file, _ := os.Open("./measurements.txt")
 	defer file.Close()
 
@@ -47,8 +62,8 @@ func main() {
 	reader := bufio.NewReader(file)
 	var leftData []byte
 
-	var wg sync.WaitGroup
 	linesChan := make(chan [][]byte)
+	var wg sync.WaitGroup
 	wg.Add(workers)
 
 	go func() {
@@ -82,7 +97,7 @@ func main() {
 						loc = NewLocation()
 						m[name] = loc
 					}
-					loc.Add(float32(temp))
+					loc.Add(temp)
 				}
 			}
 			wg.Done()
