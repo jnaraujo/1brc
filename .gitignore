@@ -2,5 +2,5 @@
 measurements.txt
 weather_stations.csv
 test
-ibrc
 cpu.prof
+*.out
