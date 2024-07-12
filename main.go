@@ -73,8 +73,6 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(workers)
 
-	var chunk []byte
-
 	for i := 0; i < workers; i++ {
 		go func() {
 			for chunk := range chunkChan {
@@ -101,6 +99,7 @@ func main() {
 		}()
 	}
 
+	var chunk []byte
 	for {
 		n, err := reader.Read(buf)
 		if err != nil {
