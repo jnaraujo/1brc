@@ -45,7 +45,7 @@ func (loc *Location) Add(temp int16) {
 }
 
 const chunkSize = 1024 * 1024
-const workers = 32
+const workers = 12
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
