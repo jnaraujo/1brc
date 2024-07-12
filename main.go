@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"runtime/pprof"
 	"sort"
 	"sync"
+	"unsafe"
+
+	"github.com/dolthub/swiss"
 )
 
 type Location struct {
@@ -22,26 +26,26 @@ type Location struct {
 
 func NewLocation() *Location {
 	return &Location{
-		min:   9999,
-		max:   -9999,
+		min:   math.MaxInt16,
+		max:   math.MinInt16,
 		sum:   0,
 		count: 0,
 	}
 }
 
 func (loc *Location) Add(temp int16) {
-	if temp < loc.min {
-		loc.min = temp
-	}
-	if temp > loc.max {
-		loc.max = temp
-	}
 	loc.sum += int64(temp)
 	loc.count += 1
+
+	if temp < loc.min {
+		loc.min = temp
+	} else if temp > loc.max {
+		loc.max = temp
+	}
 }
 
-const chunkSize = 50 * 1024 * 1024
-const workers = 8
+const chunkSize = 1024 * 1024
+const workers = 32
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
@@ -59,44 +63,22 @@ func main() {
 	file, _ := os.Open("./measurements.txt")
 	defer file.Close()
 
-	m := map[string]*Location{}
+	m := swiss.NewMap[string, *Location](825)
 
 	buf := make([]byte, chunkSize)
 	reader := bufio.NewReader(file)
 	var leftData []byte
 
-	linesChan := make(chan [][]byte)
+	chunkChan := make(chan []byte)
 	var wg sync.WaitGroup
 	wg.Add(workers)
 
 	var chunk []byte
-	var lines [][]byte
-
-	go func() {
-		for {
-			n, err := reader.Read(buf)
-			if err != nil {
-				if err == io.EOF {
-					// last chunk
-					if len(leftData) > 0 {
-						linesChan <- [][]byte{leftData}
-					}
-					break
-				}
-				panic(err)
-			}
-
-			chunk = append(leftData, buf[:n]...)
-			lines = bytes.Split(chunk, []byte{'\n'})
-			lines, leftData = lines[:len(lines)-1], lines[len(lines)-1]
-			linesChan <- lines
-		}
-		close(linesChan)
-	}()
 
 	for i := 0; i < workers; i++ {
 		go func() {
-			for lines := range linesChan {
+			for chunk := range chunkChan {
+				lines := bytes.Split(chunk, []byte{'\n'})
 				for _, line := range lines {
 					idx := 0
 					if line[len(line)-5] == ';' {
@@ -104,13 +86,13 @@ func main() {
 					} else {
 						idx = len(line) - 6
 					}
-					name := string(line[:idx])
+					name := unsafe.String(unsafe.SliceData(line[:idx]), idx)
 					temp := parse(line[idx+1:])
 
-					loc, ok := m[name]
+					loc, ok := m.Get(name)
 					if !ok {
 						loc = NewLocation()
-						m[name] = loc
+						m.Put(name, loc)
 					}
 					loc.Add(temp)
 				}
@@ -119,17 +101,34 @@ func main() {
 		}()
 	}
 
+	for {
+		n, err := reader.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			panic(err)
+		}
+
+		chunk = append(leftData, buf[:n]...)
+		lastIndex := bytes.LastIndex(chunk, []byte{'\n'})
+		leftData = chunk[lastIndex+1:]
+		chunkChan <- chunk[:lastIndex]
+	}
+	close(chunkChan)
+
 	wg.Wait()
 
-	keys := make([]string, 0, len(m))
-	for k := range m {
+	keys := make([]string, 0, m.Count())
+	m.Iter(func(k string, _ *Location) (stop bool) {
 		keys = append(keys, k)
-	}
+		return false
+	})
 
 	sort.Strings(keys)
 
 	for _, name := range keys {
-		loc := m[name]
+		loc, _ := m.Get(name)
 		mean := float32(loc.sum) / float32(loc.count) / 10
 		fmt.Printf("%s: %.1f/%.1f/%.1f\n", name, float32(loc.min)/10, mean, float32(loc.max)/10)
 	}
