@@ -13,12 +13,10 @@ import (
 	"sort"
 	"sync"
 	"unsafe"
-
-	"github.com/dolthub/swiss"
 )
 
 const (
-	chunkSize = 1024 * 1024
+	chunkSize = 2 * 1024 * 1024
 	workers   = 12
 )
 
@@ -67,13 +65,13 @@ func main() {
 	defer file.Close()
 
 	chunkChan := make(chan []byte, workers)
-	mapChan := make(chan *swiss.Map[string, *Location], workers)
+	mapChan := make(chan map[string]*Location, workers)
 	var wg sync.WaitGroup
 	wg.Add(workers)
 
 	for i := 0; i < workers; i++ {
 		go func() {
-			lm := swiss.NewMap[string, *Location](825)
+			lm := map[string]*Location{}
 			for chunk := range chunkChan {
 				lines := bytes.Split(chunk, []byte{'\n'})
 				for _, line := range lines {
@@ -81,10 +79,10 @@ func main() {
 					name := unsafe.String(unsafe.SliceData(before), len(before))
 					temp := bytesToTemp(after)
 
-					loc, ok := lm.Get(name)
+					loc, ok := lm[name]
 					if !ok {
 						loc = NewLocation()
-						lm.Put(name, loc)
+						lm[name] = loc
 					}
 					loc.Add(temp)
 				}
@@ -120,14 +118,14 @@ func main() {
 
 	keys := make([]string, 0, 825)
 
-	m := swiss.NewMap[string, *Location](825)
+	m := map[string]*Location{}
 	for lm := range mapChan {
-		lm.Iter(func(lk string, lLoc *Location) (stop bool) {
-			loc, ok := m.Get(lk)
+		for lk, lLoc := range lm {
+			loc, ok := m[lk]
 			if !ok {
 				keys = append(keys, lk)
-				m.Put(lk, lLoc)
-				return false
+				m[lk] = lLoc
+				continue
 			}
 
 			if lLoc.min < loc.min {
@@ -138,15 +136,13 @@ func main() {
 			}
 			loc.sum += lLoc.sum
 			loc.count += lLoc.count
-
-			return false
-		})
+		}
 	}
 
 	sort.Strings(keys)
 
 	for _, name := range keys {
-		loc, _ := m.Get(name)
+		loc := m[name]
 		mean := float32(loc.sum) / float32(loc.count) / 10
 		fmt.Printf("%s: %.1f/%.1f/%.1f\n", name, float32(loc.min)/10, mean, float32(loc.max)/10)
 	}
