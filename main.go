@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	chunkSize = 2 * 1024 * 1024
-	workers   = 12
+	citiesCount = 413
+	chunkSize   = 2 * 1024 * 1024
+	workers     = 12
 )
 
 type Location struct {
@@ -65,6 +66,7 @@ func main() {
 	defer file.Close()
 
 	chunkChan := make(chan []byte, workers)
+
 	mapChan := make(chan map[string]*Location, workers)
 	var wg sync.WaitGroup
 	wg.Add(workers)
@@ -73,9 +75,12 @@ func main() {
 		go func() {
 			lm := map[string]*Location{}
 			for chunk := range chunkChan {
-				lines := bytes.Split(chunk, []byte{'\n'})
-				for _, line := range lines {
-					before, after := parseLine(line)
+				start := 0
+				for end, b := range chunk {
+					if b != '\n' {
+						continue
+					}
+					before, after := parseLine(chunk[start:end])
 					name := unsafe.String(unsafe.SliceData(before), len(before))
 					temp := bytesToTemp(after)
 
@@ -85,6 +90,8 @@ func main() {
 						lm[name] = loc
 					}
 					loc.Add(temp)
+
+					start = end + 1
 				}
 			}
 			mapChan <- lm
