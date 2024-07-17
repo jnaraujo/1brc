@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"os"
 	"runtime/pprof"
 	"sort"
@@ -16,9 +15,8 @@ import (
 )
 
 const (
-	citiesCount = 413
-	chunkSize   = 2 * 1024 * 1024
-	workers     = 12
+	chunkSize = 2 * 1024 * 1024
+	workers   = 12
 )
 
 type Location struct {
@@ -28,12 +26,12 @@ type Location struct {
 	count uint32
 }
 
-func NewLocation() *Location {
+func NewLocation(temp int16) *Location {
 	return &Location{
-		min:   math.MaxInt16,
-		max:   math.MinInt16,
-		sum:   0,
-		count: 0,
+		min:   temp,
+		max:   temp,
+		sum:   int32(temp),
+		count: 1,
 	}
 }
 
@@ -86,10 +84,10 @@ func main() {
 
 					loc, ok := lm[name]
 					if !ok {
-						loc = NewLocation()
-						lm[name] = loc
+						lm[name] = NewLocation(temp)
+					} else {
+						loc.Add(temp)
 					}
-					loc.Add(temp)
 
 					start = end + 1
 				}
